@@ -169,6 +169,23 @@ def test_csv_and_tsv_become_rows() -> None:
     assert "Prensa A | seis meses" in tsv_result.chunks[0].text
 
 
+def test_html_de_una_sola_linea_extrae_texto_y_cita_la_linea() -> None:
+    content = (
+        b"<html><head><style>.filtro{color:red}</style>"
+        b"<script>no sirve</script></head><body>"
+        b"<h1>Mantenimiento</h1><p>El filtro cada seis meses.</p>"
+        b"</body></html>"
+    )
+
+    result = process_document("manual.html", content)
+
+    assert "no sirve" not in result.chunks[0].text
+    assert "color:red" not in result.chunks[0].text
+    assert "Mantenimiento" in result.chunks[0].text
+    assert "El filtro cada seis meses." in result.chunks[0].text
+    assert result.chunks[0].sources == ("línea 1",)
+
+
 def test_html_removes_tags_and_scripts() -> None:
     content = (
         b"<html>\n"

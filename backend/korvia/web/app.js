@@ -48,13 +48,30 @@ function clear(node) {
   node.replaceChildren();
 }
 
+function detailText(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return detail.map(detailText).join("; ");
+  if (detail && typeof detail === "object") {
+    if (typeof detail.msg === "string") {
+      const parts = Array.isArray(detail.loc) ? detail.loc.filter((part) => part !== "body") : [];
+      const field = parts.length ? `${parts.join(".")}: ` : "";
+      return field + detail.msg;
+    }
+    if (detail.detail !== undefined) return detailText(detail.detail);
+    return Object.entries(detail).map(([key, value]) => `${key}: ${detailText(value)}`).join("; ");
+  }
+  return String(detail ?? "");
+}
+
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const response = await fetch(path, { ...options, headers });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || `No se pudo completar la acción (${response.status}).`);
+  if (!response.ok) {
+    throw new Error(detailText(data && data.detail) || `No se pudo completar la acción (${response.status}).`);
+  }
   return data;
 }
 
@@ -73,8 +90,13 @@ const canWrite = () => state.role === "owner" || state.role === "admin";
 function setRole() {
   const membership = state.me.memberships.find((item) => item.tenant_id === state.tenantId);
   state.role = membership ? membership.role : "";
-  $("role-label").textContent = state.role === "member" ? "Solo lectura" : "Puedes gestionar";
-  document.querySelector('[data-tab="actividad"]').hidden = state.role === "member";
+  const esMiembro = state.role === "member";
+  $("role-label").textContent = esMiembro
+    ? "Miembro · puede preguntar y ejecutar agentes"
+    : "Puedes gestionar";
+  $("space-form").hidden = esMiembro;
+  $("upload-form").hidden = esMiembro;
+  document.querySelector('[data-tab="actividad"]').hidden = esMiembro;
 }
 
 function showApp() {
@@ -122,10 +144,6 @@ async function loadSpaces() {
   const spaces = await api(`${tenantPath()}/spaces`);
   const select = $("space-select");
   clear(select);
-  const all = document.createElement("option");
-  all.value = "";
-  all.textContent = "Todas las áreas";
-  select.appendChild(all);
   spaces.forEach((space) => {
     const option = document.createElement("option");
     option.value = space.id;

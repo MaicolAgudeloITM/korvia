@@ -25,6 +25,21 @@ def test_health_endpoint(client) -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_los_errores_de_registro_se_lean_en_espanol(client) -> None:
+    response = client.post(
+        "/api/auth/register",
+        json={"email": "a", "password": "corta", "company_name": "Empresa"},
+    )
+
+    detail = response.json()["detail"]
+
+    assert response.status_code == 422
+    assert isinstance(detail, str)
+    assert "email: demasiado corto (mínimo 5)" in detail
+    assert "contraseña: demasiado corta (mínimo 8)" in detail
+    assert "String should have" not in detail
+
+
 def test_inspect_endpoint_returns_cited_pdf_text(auth_client) -> None:
     response = auth_client.post(
         "/api/documents/inspect",

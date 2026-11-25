@@ -22,7 +22,8 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
@@ -102,6 +103,45 @@ class VersionAlreadyExists(RuntimeError):
         self.document = document
 
 
+def _spanish_validation_detail(errors: list[dict]) -> str:
+    """Convierte los errores de Pydantic en frases cortas en español."""
+    labels = {
+        "email": "email",
+        "password": "contraseña",
+        "company_name": "empresa",
+        "name": "nombre",
+        "query": "búsqueda",
+        "question": "pregunta",
+        "steps": "pasos",
+    }
+    messages: list[str] = []
+    for error in errors:
+        parts = [str(part) for part in error.get("loc", ()) if part not in {"body", "query", "path"}]
+        field = labels.get(parts[-1], parts[-1]) if parts else "dato"
+        context = error.get("ctx") or {}
+        kind = error.get("type", "")
+
+        if kind == "string_too_short":
+            adjective = "corta" if field == "contraseña" else "corto"
+            minimum = context.get("min_length")
+            suffix = f" (mínimo {minimum})" if minimum is not None else ""
+            messages.append(f"{field}: demasiado {adjective}{suffix}")
+        elif kind == "string_too_long":
+            adjective = "larga" if field == "contraseña" else "largo"
+            maximum = context.get("max_length")
+            suffix = f" (máximo {maximum})" if maximum is not None else ""
+            messages.append(f"{field}: demasiado {adjective}{suffix}")
+        elif kind == "too_short":
+            minimum = context.get("min_length")
+            suffix = f" (mínimo {minimum})" if minimum is not None else ""
+            messages.append(f"{field}: faltan elementos{suffix}")
+        elif kind == "missing":
+            messages.append(f"{field}: falta este dato")
+        else:
+            messages.append(f"{field}: valor no válido")
+    return "; ".join(messages) or "Revisa los datos enviados."
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     initialize_database()
@@ -114,6 +154,15 @@ app = FastAPI(
     version="0.9.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """Devuelve errores de datos en español, sin textos internos de Pydantic."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _spanish_validation_detail(exc.errors())},
+    )
 
 
 @app.middleware("http")
@@ -785,10 +834,12 @@ def create_space(
 
     space = KnowledgeSpace(tenant_id=tenant_id, name=name)
     db.add(space)
-    _audit(
-        db, user, tenant_id, "crear_espacio", target_type="espacio", summary=f"Creó el espacio {name}."
-    )
     try:
+        db.flush()
+        _audit(
+            db, user, tenant_id, "crear_espacio", target_type="espacio",
+            target_id=space.id, summary=f"Creó el espacio {name}."
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -1196,14 +1247,18 @@ def search_documents(
     except EmbeddingError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    matches = find_similar_chunks(
-        db,
-        tenant_id,
-        query_vector,
-        payload.top_k,
-        space_id=payload.space_id,
-        metadata_filters=payload.metadata_filters,
-    )
+    matches = [
+        match
+        for match in find_similar_chunks(
+            db,
+            tenant_id,
+            query_vector,
+            payload.top_k,
+            space_id=payload.space_id,
+            metadata_filters=payload.metadata_filters,
+        )
+        if match[3] >= MIN_ANSWER_SCORE
+    ]
     return SearchResponse(
         provider=provider.name,
         results=[
@@ -1348,11 +1403,12 @@ def create_agent(
         metadata_filters_json=payload.metadata_filters,
     )
     db.add(agent)
-    _audit(
-        db, user, tenant_id, "crear_agente", target_type="agente", target_id=agent.id,
-        summary=f"Creó el agente {agent.name} con {len(steps)} pasos.",
-    )
     try:
+        db.flush()
+        _audit(
+            db, user, tenant_id, "crear_agente", target_type="agente", target_id=agent.id,
+            summary=f"Creó el agente {agent.name} con {len(steps)} pasos.",
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()

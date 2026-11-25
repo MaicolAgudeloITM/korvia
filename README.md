@@ -35,12 +35,13 @@ Las citas señalan página, fila, línea, diapositiva o imagen según el formato
 ## Qué puedes hacer
 
 - **Subir documentos.** Si subes otro con el mismo nombre, se guarda como una versión nueva.
-- **Buscar.** `POST /api/tenants/{tenant_id}/search` con `{"query":"texto a buscar"}`.
+- **Buscar.** `POST /api/tenants/{tenant_id}/search` con `{"query":"texto a buscar"}`. No muestra fragmentos sin relación.
 - **Preguntar.** La respuesta trae citas `[1]`, `[2]` con el archivo de origen. Si no hay información, dice que no encontró nada.
 - **Sincronizar una carpeta.** Deja tus archivos en `data/entrada` y llama a `POST /api/tenants/{tenant_id}/spaces/{space_id}/sync`. Los cambios se aplican cuando ejecutas esa orden.
 - **Usar un agente.** Varias preguntas ejecutadas en orden que entregan un informe con fuentes.
 - **Ver la actividad.** `GET /api/tenants/{tenant_id}/audit` muestra quién hizo cada acción. Solo dueño o administrador.
-- **Invitar personas.** `POST /api/tenants/{tenant_id}/members`. Dueño y administrador pueden subir archivos y crear agentes; los miembros pueden preguntar y ejecutarlos.
+- **Invitar personas.** `POST /api/tenants/{tenant_id}/members`. Dueño y administrador pueden subir archivos y crear agentes; los miembros pueden preguntar y ejecutarlos. En la web, el miembro ve “Miembro · puede preguntar y ejecutar agentes” y no ve crear áreas ni subir archivos.
+- **Errores claros.** Si un dato está mal, la web muestra el motivo en español, por ejemplo “contraseña: demasiado corta (mínimo 8)”.
 
 ## Agentes
 

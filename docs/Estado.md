@@ -1,6 +1,6 @@
 # KORVIA — memoria del proyecto
 
-Última actualización: 2026-11-25.
+Última actualización: 2026-11-24.
 
 Este archivo es el punto de partida al volver al proyecto. Aquí está lo importante acordado, construido y pendiente. `docs/Contexto.md` tiene la visión general; este archivo tiene el estado real.
 
@@ -45,7 +45,7 @@ cd D:\Korvia
 python -m pytest -q
 ```
 
-Último resultado: **92 pruebas pasan**.
+Último resultado: **99 pruebas pasan**.
 
 Comandos útiles:
 
@@ -73,7 +73,7 @@ Cadena de migraciones:
 Lo que ya funciona:
 
 - **Usuarios y permisos:** registro, inicio de sesión, sesiones revocables, roles `owner`, `admin` y `member`. Contraseñas con PBKDF2; tokens guardados como hash.
-- **Empresas y espacios:** cada usuario pertenece a una empresa; dueño/admin gestionan, miembro solo lee.
+- **Empresas y espacios:** cada usuario pertenece a una empresa; dueño/admin gestionan espacios y documentos; miembro lee, pregunta y ejecuta agentes.
 - **Documentos:** subida de PDF, Word, Excel, PowerPoint, LibreOffice, texto, datos e imágenes; OCR en Docker; extracción en fragmentos con origen (página, fila, línea, diapositiva, imagen).
 - **Formatos admitidos:** `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.md`, `.txt`, `.log`, `.csv`, `.tsv`, `.json`, `.xml`, `.yaml`, `.yml`, `.html`, `.htm`, `.rtf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.tif`, `.tiff`, `.bmp`. La lista única está en `SUPPORTED_EXTENSIONS` (`document_processing.py`).
 - **Lectura de texto:** Markdown limpia títulos, listas, negritas y enlaces; HTML quita etiquetas y scripts; RTF quita órdenes de formato; CSV/TSV se leen como filas. Todo cita `línea N` o `fila N`. Acepta UTF-8 con BOM; si no es UTF-8 avisa y usa otra codificación.
@@ -88,6 +88,8 @@ Lo que ya funciona:
 - **Auditoría:** `GET .../audit` para dueño/admin con acciones importantes.
 - **Seguridad básica:** límite de 5 intentos fallidos de login en 15 minutos y cabeceras de seguridad. El límite es solo en memoria.
 - **Interfaz web:** página en `/` con create account, login, áreas, documentos, búsqueda, preguntas, agentes y actividad. El selector de archivos acepta todos los formatos. HTML/JS/CSS puro, sin Internet ni build. El token se guarda en `localStorage`.
+- **Correcciones de uso:** el HTML de una sola línea ya extrae texto sin scripts ni estilos y conserva `línea N`. El miembro ve “Miembro · puede preguntar y ejecutar agentes”: no ve crear área ni subir archivo, pero sí “Ejecutar”. El selector de áreas ya no ofrece “Todas las áreas”. Los errores 422 salen en español y la web convierte `detail` en texto.
+- **Búsqueda y auditoría:** `/search` aplica `KORVIA_MIN_ANSWER_SCORE` igual que `/ask`, así que no muestra fragmentos sin relación. Crear espacio y crear agente guardan `target_id` en la auditoría.
 
 ## Proveedores
 
@@ -144,6 +146,7 @@ Claude Code/Anthropic no sirve como proveedor de embeddings ni expone un endpoin
 - Nada de integraciones ficticias. Si algo no existe, se dice.
 - El proveedor por defecto nunca llama a la red ni inventa respuestas.
 - La separación por empresa se aplica en la base de datos, no solo en la interfaz.
+- Dueño y administrador crean áreas, documentos y agentes; cualquier miembro puede preguntar y ejecutar agentes.
 - Actividades sensibles quedan en auditoría.
 - Los archivos originales se guardan aparte; los documentos borrados conservan historial.
 - La base de Docker se recreó limpia el 2026-11-25. No hay usuarios todavía; hay que crear cuenta en la web.

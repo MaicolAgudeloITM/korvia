@@ -68,6 +68,24 @@ def test_documentos_preguntas_y_agentes_dejan_huella(auth_client) -> None:
     assert upload["created_at"]
 
 
+def test_espacios_y_agentes_guardan_su_id_en_la_auditoria(auth_client) -> None:
+    tenant_id = auth_client.get("/api/auth/me").json()["memberships"][0]["tenant_id"]
+    space = auth_client.post(
+        f"/api/tenants/{tenant_id}/spaces", json={"name": "Taller"}
+    ).json()
+    agent = auth_client.post(
+        f"/api/tenants/{tenant_id}/agents",
+        json={"name": "Revisión", "steps": ["filtro"]},
+    ).json()
+
+    events = auth_client.get(f"/api/tenants/{tenant_id}/audit").json()
+    espacio = next(event for event in events if event["action"] == "crear_espacio")
+    agente = next(event for event in events if event["action"] == "crear_agente")
+
+    assert espacio["target_id"] == space["id"]
+    assert agente["target_id"] == agent["id"]
+
+
 def test_la_sincronizacion_tambien_queda_registrada(auth_client, tmp_path, monkeypatch) -> None:
     tenant_id = auth_client.get("/api/auth/me").json()["memberships"][0]["tenant_id"]
     space = auth_client.post(

@@ -409,26 +409,25 @@ def _decode_text(content: bytes, warnings: list[str]) -> str:
         return content.decode("cp1252", errors="replace")
 
 
+def _remove_html_hidden_blocks(text: str) -> str:
+    """Borra script y style sin cambiar el número de líneas del texto."""
+    pattern = re.compile(r"<(script|style)\b[^>]*>.*?(?:</\1\s*>|\Z)", re.I | re.S)
+    return pattern.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+
+
 def _extract_text_file(content: bytes, warnings: list[str], extension: str) -> list[TextBlock]:
     """Lee texto, datos o HTML conservando el número de línea de origen."""
     text = _decode_text(content, warnings)
     if extension == ".rtf":
         text = _clean_rtf(text)
+    if extension in {".html", ".htm"}:
+        text = _remove_html_hidden_blocks(text)
 
     blocks: list[TextBlock] = []
-    in_html_block = False
     in_comment = False
     for line_number, line in enumerate(text.splitlines(), start=1):
         value = line.strip()
         if extension in {".html", ".htm"}:
-            if in_html_block:
-                if re.search(r"</(?:script|style)\s*>", value, re.I):
-                    in_html_block = False
-                continue
-            if re.search(r"<(?:script|style)\b", value, re.I):
-                if not re.search(r"</(?:script|style)\s*>", value, re.I):
-                    in_html_block = True
-                continue
             value = html.unescape(re.sub(r"<[^>]*>", " ", value))
             value = re.sub(r"\s+", " ", value).strip()
         else:

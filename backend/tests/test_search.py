@@ -1,4 +1,5 @@
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pymupdf as fitz
@@ -34,10 +35,10 @@ def upload(auth_client, tenant_id: str, space_id: str, filename: str, text: str)
 def test_la_busqueda_devuelve_fragmentos_con_puntaje(auth_client) -> None:
     tenant_id, space_id = create_space(auth_client)
     upload(auth_client, tenant_id, space_id, "filtros.pdf", "El filtro se cambia cada seis meses.")
-    upload(auth_client, tenant_id, space_id, "secretaria.pdf", "La secretaria atiende a los visitantes.")
+    upload(auth_client, tenant_id, space_id, "secretaria.pdf", "El filtro de la secretaria se revisa cada año.")
 
     response = auth_client.post(
-        f"/api/tenants/{tenant_id}/search", json={"query": "filtro", "top_k": 2}
+        f"/api/tenants/{tenant_id}/search", json={"query": "filtro cada seis meses", "top_k": 2}
     )
 
     assert response.status_code == 200
@@ -47,6 +48,24 @@ def test_la_busqueda_devuelve_fragmentos_con_puntaje(auth_client) -> None:
     assert data["results"][0]["document_filename"] == "filtros.pdf"
     assert data["results"][0]["score"] > data["results"][1]["score"]
     assert data["results"][0]["sources"] == ["página 1"]
+
+
+def test_la_busqueda_ignora_fragmentos_sin_relacion(auth_client) -> None:
+    tenant_id, _ = create_space(auth_client)
+    sin_relacion = (
+        SimpleNamespace(position=0, sources=["página 1"]),
+        SimpleNamespace(version_number=1),
+        SimpleNamespace(id="sin-id", filename="otro.pdf", metadata_json={}),
+        0.0,
+    )
+
+    with patch("korvia.main.find_similar_chunks", return_value=[sin_relacion]):
+        response = auth_client.post(
+            f"/api/tenants/{tenant_id}/search", json={"query": "filtro"}
+        )
+
+    assert response.status_code == 200
+    assert response.json()["results"] == []
 
 
 def test_la_busqueda_filtra_por_espacio_y_metadata(auth_client) -> None:
