@@ -72,6 +72,41 @@ def test_xlsx_keeps_sheet_and_row_reference() -> None:
     assert "hoja Mantenimientos, fila 2" in result.chunks[0].sources
 
 
+def test_markdown_extracts_lines_without_format_marks() -> None:
+    content = (
+        "# Mantenimiento\n\n"
+        "El filtro **cada seis meses**.\n"
+        "- Revisar [manual](https://ejemplo.com/docs).\n"
+    )
+
+    result = process_document("manual.md", content.encode("utf-8"))
+
+    assert result.extraction_method == "text"
+    assert result.chunks[0].text == (
+        "Mantenimiento\nEl filtro cada seis meses.\nRevisar manual."
+    )
+    assert result.chunks[0].sources == ("línea 1", "línea 3", "línea 4")
+    assert "https" not in result.chunks[0].text
+
+
+def test_markdown_accepts_bom_and_warns_on_other_encoding() -> None:
+    result = process_document("notas.md", b"\xef\xbb\xbf# Instalaci\xc3\xb3n\nEl filtro.")
+
+    assert "Instalación" in result.chunks[0].text
+
+    result = process_document("notas.md", "El café".encode("cp1252"))
+
+    assert "café" in result.chunks[0].text
+    assert any("codificación" in warning for warning in result.warnings)
+
+
+def test_markdown_without_text_reports_warning() -> None:
+    result = process_document("vacio.md", b"\n# \n<!-- solo un comentario -->\n")
+
+    assert result.chunks == ()
+    assert any("texto legible" in warning for warning in result.warnings)
+
+
 def test_long_text_is_split_and_retains_source() -> None:
     chunks = chunk_blocks(
         [TextBlock("palabra " * 100, "página 4")],

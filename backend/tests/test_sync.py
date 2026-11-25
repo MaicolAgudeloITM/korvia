@@ -37,6 +37,20 @@ def write_pdf(folder: Path, relative: str, text: str) -> Path:
     return path
 
 
+def test_la_sincronizacion_tambien_acepta_markdown(auth_client, sync_folder) -> None:
+    tenant_id, space_id = create_space(auth_client)
+    (sync_folder / "notas.md").write_bytes(
+        b"# Procedimiento\nEl filtro se cambia cada seis meses."
+    )
+
+    response = auth_client.post(f"/api/tenants/{tenant_id}/spaces/{space_id}/sync")
+    documents = auth_client.get(f"/api/tenants/{tenant_id}/spaces/{space_id}/documents")
+
+    assert response.status_code == 200
+    assert response.json()["creados"] == 1
+    assert [item["filename"] for item in documents.json()["documents"]] == ["notas.md"]
+
+
 def test_la_primera_sincronizacion_crea_el_documento(auth_client, sync_folder) -> None:
     tenant_id, space_id = create_space(auth_client)
     write_pdf(sync_folder, "manual.pdf", "El filtro se cambia cada seis meses.")

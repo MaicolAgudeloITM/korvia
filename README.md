@@ -1,6 +1,6 @@
 # KORVIA
 
-Guarda tus documentos (PDF, DOCX y XLSX) y haz preguntas sobre ellos. Las respuestas muestran de qué archivo salieron.
+Guarda tus documentos (PDF, DOCX, XLSX y MD) y haz preguntas sobre ellos. Las respuestas muestran de qué archivo salieron.
 
 **Aviso:** es un prototipo para usar en tu computador. No lo expongas a Internet ni subas información confidencial.
 
@@ -17,7 +17,7 @@ Luego abre **http://127.0.0.1:8000**. Ahí está la página web. Si prefieres pr
 ## Primeros pasos
 
 1. En la página web, pulsa **¿No tienes cuenta? Crear una** y escribe correo, contraseña y empresa.
-2. Crea un área, por ejemplo "General", y sube un PDF, Word o Excel.
+2. Crea un área, por ejemplo "General", y sube un PDF, Word, Excel o Markdown.
 3. Ve a **Buscar** para encontrar fragmentos o a **Preguntas** para obtener una respuesta con fuentes.
 4. En **Agentes** puedes crear una lista de preguntas y generar un informe.
 

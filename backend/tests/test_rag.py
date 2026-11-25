@@ -54,6 +54,23 @@ def test_la_respuesta_cita_las_fuentes(auth_client) -> None:
     assert data["sources"][0]["score"] > 0
 
 
+def test_un_markdown_tambien_responde_con_citas(auth_client) -> None:
+    tenant_id, space_id = create_space(auth_client)
+    content = b"# Mantenimiento\nEl filtro se cambia cada seis meses."
+    upload_response = auth_client.post(
+        f"/api/tenants/{tenant_id}/spaces/{space_id}/documents",
+        files={"file": ("manual.md", BytesIO(content), "text/markdown")},
+    )
+
+    assert upload_response.status_code == 201
+
+    data = ask(auth_client, tenant_id, "¿cada cuánto se cambia el filtro?").json()
+
+    assert data["insufficient_evidence"] is False
+    assert "seis meses" in data["answer"]
+    assert data["sources"][0]["filename"] == "manual.md"
+
+
 def test_sin_evidencia_no_inventa_una_respuesta(auth_client) -> None:
     tenant_id, space_id = create_space(auth_client)
     upload(auth_client, tenant_id, space_id, "secretaria.pdf", "La secretaria atiende a los visitantes.")

@@ -13,7 +13,7 @@ El usuario pide español sencillo, frases cortas y pocas viñetas. Sin jerga inn
 - URL: https://github.com/MaicolAgudeloITM/korvia
 - Rama: `main`. Repositorio público.
 - Usuario Git local: `kemtch` / `kemtch19@gmail.com`.
-- Último commit conocido: `f7ccc32` — "Corregir migraciones que fallaban en PostgreSQL".
+- Último commit conocido: `ee19110` — "Guardar memoria del proyecto para futuras sesiones".
 - No se suben claves: `.env`, `.venv`, bases de datos y `data/*` están ignorados. `data/entrada/.gitkeep` sí se sube.
 
 ## Cómo arrancar
@@ -45,7 +45,7 @@ cd D:\Korvia
 python -m pytest -q
 ```
 
-Último resultado: **76 pruebas pasan**.
+Último resultado: **82 pruebas pasan**.
 
 Comandos útiles:
 
@@ -74,7 +74,8 @@ Lo que ya funciona:
 
 - **Usuarios y permisos:** registro, inicio de sesión, sesiones revocables, roles `owner`, `admin` y `member`. Contraseñas con PBKDF2; tokens guardados como hash.
 - **Empresas y espacios:** cada usuario pertenece a una empresa; dueño/admin gestionan, miembro solo lee.
-- **Documentos:** subida de PDF, DOCX y XLSX; OCR en Docker; extracción en fragmentos con origen (página, fila, etc.).
+- **Documentos:** subida de PDF, DOCX, XLSX y MD; OCR en Docker; extracción en fragmentos con origen (página, fila, línea, etc.).
+- **Markdown (.md):** se lee como texto, se limpia el formato básico (títulos, listas, negritas, enlaces) y cada fragmento cita `línea N`. Acepta UTF-8 con BOM; si no es UTF-8 avisa y usa otra codificación.
 - **Versiones:** subir de nuevo el mismo nombre crea una versión nueva. Solo se usa la versión vigente en búsquedas y respuestas.
 - **Metadata y borrado:** metadata libre; borrado lógico con restauración.
 - **Búsqueda:** por similitud, con filtros de espacio y metadata; reindexado para dueño.
@@ -83,7 +84,7 @@ Lo que ya funciona:
 - **Agentes:** lista de preguntas que se ejecutan en orden y entregan un informe con fuentes. Historial con quién ejecutó y resultado.
 - **Auditoría:** `GET .../audit` para dueño/admin con acciones importantes.
 - **Seguridad básica:** límite de 5 intentos fallidos de login en 15 minutos y cabeceras de seguridad. El límite es solo en memoria.
-- **Interfaz web:** página en `/` con create account, login, áreas, documentos, búsqueda, preguntas, agentes y actividad. HTML/JS/CSS puro, sin Internet ni build. El token se guarda en `localStorage`.
+- **Interfaz web:** página en `/` con create account, login, áreas, documentos, búsqueda, preguntas, agentes y actividad. Acepta los cuatro formatos. HTML/JS/CSS puro, sin Internet ni build. El token se guarda en `localStorage`.
 
 ## Proveedores
 

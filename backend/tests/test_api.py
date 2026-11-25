@@ -37,6 +37,20 @@ def test_inspect_endpoint_returns_cited_pdf_text(auth_client) -> None:
     assert result["chunks"][0]["sources"] == ["página 1"]
 
 
+def test_inspect_endpoint_accepts_markdown(auth_client) -> None:
+    content = b"# Mantenimiento\nEl filtro se cambia cada seis meses."
+
+    response = auth_client.post(
+        "/api/documents/inspect",
+        files={"file": ("manual.md", BytesIO(content), "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["extraction_method"] == "text"
+    assert result["chunks"][0]["sources"] == ["línea 1", "línea 2"]
+
+
 def test_inspect_endpoint_rejects_unsupported_format(auth_client) -> None:
     response = auth_client.post(
         "/api/documents/inspect",

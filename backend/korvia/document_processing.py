@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".md"}
 
 
 class DocumentProcessingError(ValueError):
@@ -55,7 +56,7 @@ def process_document(
     chunk_size: int = 1200,
     chunk_overlap: int = 120,
 ) -> ProcessedDocument:
-    """Extrae PDF, Word o Excel y devuelve fragmentos con sus referencias."""
+    """Extrae PDF, Word, Excel o Markdown y devuelve fragmentos con referencias."""
     extension = Path(filename).suffix.lower()
     if extension not in SUPPORTED_EXTENSIONS:
         allowed = ", ".join(sorted(SUPPORTED_EXTENSIONS))
@@ -69,6 +70,9 @@ def process_document(
         blocks = _extract_pdf(content, methods, warnings)
     elif extension == ".docx":
         blocks = _extract_docx(content)
+        methods.add("text")
+    elif extension == ".md":
+        blocks = _extract_markdown(content, warnings)
         methods.add("text")
     else:
         blocks = _extract_xlsx(content)
@@ -203,6 +207,44 @@ def _extract_xlsx(content: bytes) -> list[TextBlock]:
         return blocks
     except Exception as exc:
         raise DocumentProcessingError("No pude abrir el archivo Excel. Verifica que sea un XLSX válido.") from exc
+
+
+def _extract_markdown(content: bytes, warnings: list[str]) -> list[TextBlock]:
+    """Lee un .md como texto plano y guarda el número de línea de cada fragmento."""
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        warnings.append("El archivo no estaba en UTF-8; se leyó con otra codificación.")
+        text = content.decode("cp1252", errors="replace")
+
+    blocks: list[TextBlock] = []
+    in_comment = False
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        value = line.strip()
+        if in_comment:
+            if "-->" in value:
+                in_comment = False
+            continue
+        if value.startswith("<!--"):
+            in_comment = "-->" not in value
+            continue
+        if not value or value.startswith("```"):
+            continue
+        clean = _clean_markdown_line(value)
+        if clean:
+            blocks.append(TextBlock(text=clean, source=f"línea {line_number}"))
+    return blocks
+
+
+def _clean_markdown_line(text: str) -> str:
+    """Quita los signos de formato de Markdown sin borrar el contenido."""
+    if re.fullmatch(r"[#>*+\-_`\s]+", text):
+        return ""
+    text = re.sub(r"^#{1,6}\s+", "", text)
+    text = re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", text)
+    text = re.sub(r"^>\s?", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    return text.replace("**", "").replace("__", "").replace("`", "").strip()
 
 
 def chunk_blocks(
