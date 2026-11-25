@@ -1,6 +1,6 @@
 # KORVIA
 
-Guarda tus documentos (PDF, DOCX, XLSX y MD) y haz preguntas sobre ellos. Las respuestas muestran de qué archivo salieron.
+Guarda tus documentos y haz preguntas sobre ellos. Las respuestas muestran de qué archivo salieron.
 
 **Aviso:** es un prototipo para usar en tu computador. No lo expongas a Internet ni subas información confidencial.
 
@@ -17,11 +17,20 @@ Luego abre **http://127.0.0.1:8000**. Ahí está la página web. Si prefieres pr
 ## Primeros pasos
 
 1. En la página web, pulsa **¿No tienes cuenta? Crear una** y escribe correo, contraseña y empresa.
-2. Crea un área, por ejemplo "General", y sube un PDF, Word, Excel o Markdown.
+2. Crea un área, por ejemplo "General", y sube un archivo de los formatos admitidos.
 3. Ve a **Buscar** para encontrar fragmentos o a **Preguntas** para obtener una respuesta con fuentes.
 4. En **Agentes** puedes crear una lista de preguntas y generar un informe.
 
 La página guarda la sesión en tu navegador. Para salir, pulsa **Salir** arriba a la derecha.
+
+## Formatos admitidos
+
+- Documentos: PDF, Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`).
+- LibreOffice: texto (`.odt`), hojas (`.ods`), presentaciones (`.odp`).
+- Texto y datos: Markdown (`.md`), `.txt`, `.log`, `.csv`, `.tsv`, `.json`, `.xml`, `.yaml`, `.yml`, `.html`, `.htm`, `.rtf`.
+- Imágenes: `.png`, `.jpg`, `.jpeg`, `.webp`, `.tif`, `.tiff`, `.bmp`. Se leen con OCR, así que necesitan Tesseract.
+
+Las citas señalan página, fila, línea, diapositiva o imagen según el formato.
 
 ## Qué puedes hacer
 

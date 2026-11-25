@@ -1,9 +1,12 @@
+import zipfile
 from io import BytesIO
 from unittest.mock import patch
 
 import pymupdf as fitz
 from docx import Document
 from openpyxl import Workbook
+from PIL import Image
+from pptx import Presentation
 
 from korvia.document_processing import (
     TextBlock,
@@ -119,9 +122,149 @@ def test_long_text_is_split_and_retains_source() -> None:
     assert all(chunk.sources == ("página 4",) for chunk in chunks)
 
 
+def make_odf(body: str) -> bytes:
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<office:document-content '
+        'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+        'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+        'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
+        'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0">'
+        f"<office:body>{body}</office:body>"
+        "</office:document-content>"
+    )
+    output = BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("content.xml", xml)
+    return output.getvalue()
+
+
+def test_text_data_formats_keep_line_reference() -> None:
+    cases = {
+        "notas.txt": b"El filtro cada seis meses.",
+        "notas.log": b"El filtro cada seis meses.",
+        "notas.json": b'{"frecuencia": "seis meses"}',
+        "notas.xml": b"<raiz><frecuencia>seis meses</frecuencia></raiz>",
+        "notas.yaml": b"frecuencia: seis meses\n",
+        "notas.yml": b"frecuencia: seis meses\n",
+    }
+
+    for filename, content in cases.items():
+        result = process_document(filename, content)
+        assert result.extraction_method == "text", filename
+        assert "seis meses" in result.chunks[0].text, filename
+        assert result.chunks[0].sources == ("línea 1",), filename
+
+
+def test_csv_and_tsv_become_rows() -> None:
+    csv_result = process_document(
+        "historial.csv", b"Maquina,Frecuencia\nPrensa A,seis meses\n"
+    )
+    tsv_result = process_document(
+        "historial.tsv", b"Maquina\tFrecuencia\nPrensa A\tseis meses\n"
+    )
+
+    assert csv_result.chunks[0].text == "Maquina | Frecuencia\nPrensa A | seis meses"
+    assert csv_result.chunks[0].sources == ("fila 1", "fila 2")
+    assert "Prensa A | seis meses" in tsv_result.chunks[0].text
+
+
+def test_html_removes_tags_and_scripts() -> None:
+    content = (
+        b"<html>\n"
+        b"<script>no sirve</script>\n"
+        b"<h1>Mantenimiento</h1>\n"
+        b"<p>El filtro <b>cada seis meses</b>.</p>\n"
+        b"</html>\n"
+    )
+
+    result = process_document("manual.html", content)
+
+    assert "no sirve" not in result.chunks[0].text
+    assert "Mantenimiento" in result.chunks[0].text
+    assert "cada seis meses" in result.chunks[0].text
+    assert "línea 3" in result.chunks[0].sources
+
+
+def test_rtf_strips_control_words() -> None:
+    result = process_document("notas.rtf", b"{\\rtf1\\ansi El filtro cada seis meses.}")
+
+    assert "El filtro cada seis meses." in result.chunks[0].text
+
+
+def test_pptx_extracts_slides_and_tables() -> None:
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_textbox(0, 0, 100, 100).text_frame.text = "El filtro cada seis meses."
+    table_shape = slide.shapes.add_table(1, 2, 0, 100, 200, 50)
+    table_shape.table.cell(0, 0).text = "Frecuencia"
+    table_shape.table.cell(0, 1).text = "seis meses"
+    output = BytesIO()
+    presentation.save(output)
+
+    result = process_document("charla.pptx", output.getvalue())
+
+    assert result.extraction_method == "text"
+    assert "diapositiva 1" in result.chunks[0].sources
+    assert "Frecuencia | seis meses" in result.chunks[0].text
+    assert "diapositiva 1, tabla, fila 1" in result.chunks[0].sources
+
+
+def test_odt_extracts_paragraphs() -> None:
+    body = "<office:text><text:p>El filtro cada seis meses.</text:p></office:text>"
+
+    result = process_document("notas.odt", make_odf(body))
+
+    assert result.chunks[0].text == "El filtro cada seis meses."
+    assert result.chunks[0].sources == ("párrafo 1",)
+
+
+def test_ods_extracts_rows() -> None:
+    body = (
+        '<office:spreadsheet><table:table table:name="Mantenimientos">'
+        "<table:table-row>"
+        "<table:table-cell><text:p>Maquina</text:p></table:table-cell>"
+        "<table:table-cell><text:p>seis meses</text:p></table:table-cell>"
+        "</table:table-row></table:table></office:spreadsheet>"
+    )
+
+    result = process_document("historial.ods", make_odf(body))
+
+    assert "Maquina | seis meses" in result.chunks[0].text
+    assert "hoja Mantenimientos, fila 1" in result.chunks[0].sources
+
+
+def test_odp_extracts_slides() -> None:
+    body = (
+        '<office:presentation><draw:page draw:name="1">'
+        "<text:p>El filtro cada seis meses.</text:p>"
+        "</draw:page></office:presentation>"
+    )
+
+    result = process_document("charla.odp", make_odf(body))
+
+    assert result.chunks[0].text == "El filtro cada seis meses."
+    assert result.chunks[0].sources == ("diapositiva 1",)
+
+
+def test_image_uses_ocr_and_keeps_reference() -> None:
+    output = BytesIO()
+    Image.new("RGB", (8, 8), "white").save(output, format="PNG")
+
+    with patch(
+        "korvia.document_processing._recognize_image",
+        return_value="Texto leido de la imagen",
+    ):
+        result = process_document("foto.png", output.getvalue())
+
+    assert result.extraction_method == "ocr"
+    assert result.chunks[0].text == "Texto leido de la imagen"
+    assert result.chunks[0].sources == ("imagen (OCR)",)
+
+
 def test_unsupported_format_is_rejected() -> None:
     try:
-        process_document("datos.csv", b"a,b\n1,2")
+        process_document("programa.exe", b"MZ\x90\x00")
     except UnsupportedDocumentType as exc:
         assert ".pdf" in str(exc)
     else:

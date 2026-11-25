@@ -5,7 +5,9 @@ def test_la_portada_de_la_interfaz_se_sirve(client) -> None:
     assert "KORVIA" in response.text
     assert "/app.js" in response.text
     assert "/styles.css" in response.text
-    assert 'accept=".pdf,.docx,.xlsx,.md"' in response.text
+    accept = response.text.split('accept="')[1].split('"')[0]
+    for extension in (".pdf", ".pptx", ".odt", ".csv", ".json", ".png"):
+        assert extension in accept
     assert response.headers["X-Frame-Options"] == "DENY"
 
 

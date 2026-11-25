@@ -2,15 +2,53 @@
 
 from __future__ import annotations
 
+import csv
+import html
 import os
 import re
+import zipfile
 from dataclasses import dataclass
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Iterable
+from xml.etree import ElementTree as ET
 
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".md"}
+SUPPORTED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".pptx",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".md",
+    ".txt",
+    ".log",
+    ".csv",
+    ".tsv",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".html",
+    ".htm",
+    ".rtf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".tif",
+    ".tiff",
+    ".bmp",
+}
+
+TEXT_EXTENSIONS = {
+    ".md", ".txt", ".log", ".json", ".xml", ".yaml", ".yml", ".html", ".htm", ".rtf"
+}
+DELIMITED_EXTENSIONS = {".csv", ".tsv"}
+ODF_EXTENSIONS = {".odt", ".ods", ".odp"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp"}
 
 
 class DocumentProcessingError(ValueError):
@@ -56,7 +94,7 @@ def process_document(
     chunk_size: int = 1200,
     chunk_overlap: int = 120,
 ) -> ProcessedDocument:
-    """Extrae PDF, Word, Excel o Markdown y devuelve fragmentos con referencias."""
+    """Extrae texto de documentos y devuelve fragmentos con su referencia."""
     extension = Path(filename).suffix.lower()
     if extension not in SUPPORTED_EXTENSIONS:
         allowed = ", ".join(sorted(SUPPORTED_EXTENSIONS))
@@ -71,12 +109,24 @@ def process_document(
     elif extension == ".docx":
         blocks = _extract_docx(content)
         methods.add("text")
-    elif extension == ".md":
-        blocks = _extract_markdown(content, warnings)
-        methods.add("text")
-    else:
+    elif extension == ".xlsx":
         blocks = _extract_xlsx(content)
         methods.add("text")
+    elif extension in TEXT_EXTENSIONS:
+        blocks = _extract_text_file(content, warnings, extension)
+        methods.add("text")
+    elif extension in DELIMITED_EXTENSIONS:
+        blocks = _extract_delimited(content, warnings, extension)
+        methods.add("text")
+    elif extension == ".pptx":
+        blocks = _extract_pptx(content)
+        methods.add("text")
+    elif extension in ODF_EXTENSIONS:
+        blocks = _extract_odf(content, extension)
+        methods.add("text")
+    else:
+        blocks = _extract_image(content, warnings)
+        methods.add("ocr")
 
     chunks = chunk_blocks(blocks, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     if not blocks:
@@ -127,10 +177,23 @@ def _ocr_pdf_page(page: object) -> str:
     try:
         import pymupdf as fitz
         from PIL import Image
-        import pytesseract
     except ImportError as exc:
         raise OCRUnavailableError(
             "Este PDF parece escaneado. Para leerlo instala PyMuPDF, Pillow, pytesseract y Tesseract OCR."
+        ) from exc
+
+    pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+    image = Image.open(BytesIO(pixmap.tobytes("png")))
+    return _recognize_image(image)
+
+
+def _recognize_image(image: object) -> str:
+    """Usa Tesseract para leer una imagen o una página de PDF."""
+    try:
+        import pytesseract
+    except ImportError as exc:
+        raise OCRUnavailableError(
+            "Para leer imágenes instala pytesseract y Tesseract OCR."
         ) from exc
 
     command = os.getenv("TESSERACT_CMD")
@@ -139,16 +202,14 @@ def _ocr_pdf_page(page: object) -> str:
 
     languages = os.getenv("KORVIA_OCR_LANGUAGES", "spa+eng")
     try:
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
-        image = Image.open(BytesIO(pixmap.tobytes("png")))
         return pytesseract.image_to_string(image, lang=languages)
     except pytesseract.TesseractNotFoundError as exc:
         raise OCRUnavailableError(
-            "Este PDF parece escaneado, pero no encuentro Tesseract OCR. Instálalo y verifica los idiomas español e inglés."
+            "No encuentro Tesseract OCR. Instálalo y verifica los idiomas español e inglés."
         ) from exc
     except pytesseract.TesseractError as exc:
         raise OCRProcessingError(
-            "Tesseract no pudo leer la página. Verifica que tenga instalados los idiomas configurados."
+            "Tesseract no pudo leer la imagen. Verifica los idiomas configurados."
         ) from exc
 
 
@@ -209,31 +270,201 @@ def _extract_xlsx(content: bytes) -> list[TextBlock]:
         raise DocumentProcessingError("No pude abrir el archivo Excel. Verifica que sea un XLSX válido.") from exc
 
 
-def _extract_markdown(content: bytes, warnings: list[str]) -> list[TextBlock]:
-    """Lee un .md como texto plano y guarda el número de línea de cada fragmento."""
+def _extract_pptx(content: bytes) -> list[TextBlock]:
     try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        warnings.append("El archivo no estaba en UTF-8; se leyó con otra codificación.")
-        text = content.decode("cp1252", errors="replace")
+        from pptx import Presentation
+    except ImportError as exc:
+        raise DocumentProcessingError(
+            "Para leer presentaciones PPTX instala python-pptx."
+        ) from exc
+    try:
+        presentation = Presentation(BytesIO(content))
+    except Exception as exc:
+        raise DocumentProcessingError(
+            "No pude abrir la presentación. Verifica que sea un PPTX válido."
+        ) from exc
 
     blocks: list[TextBlock] = []
+    try:
+        for slide_number, slide in enumerate(presentation.slides, start=1):
+            for shape in slide.shapes:
+                if getattr(shape, "has_text_frame", False):
+                    for paragraph in shape.text_frame.paragraphs:
+                        text = "".join(run.text for run in paragraph.runs).strip()
+                        if text:
+                            blocks.append(TextBlock(text, f"diapositiva {slide_number}"))
+                if getattr(shape, "has_table", False):
+                    for row_number, row in enumerate(shape.table.rows, start=1):
+                        values = [
+                            cell.text.strip().replace("\n", " ") for cell in row.cells
+                        ]
+                        text = " | ".join(value for value in values if value)
+                        if text:
+                            blocks.append(
+                                TextBlock(
+                                    text,
+                                    f"diapositiva {slide_number}, tabla, fila {row_number}",
+                                )
+                            )
+    except Exception as exc:
+        raise DocumentProcessingError(
+            "No pude leer el contenido de la presentación."
+        ) from exc
+    return blocks
+
+
+ODF_NAMESPACES = {
+    "text": "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+    "table": "urn:oasis:names:tc:opendocument:xmlns:table:1.0",
+    "draw": "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0",
+}
+
+
+def _odf_text(element: ET.Element) -> str:
+    return re.sub(r"\s+", " ", "".join(element.itertext())).strip()
+
+
+def _extract_odf(content: bytes, extension: str) -> list[TextBlock]:
+    """Lee documentos de LibreOffice (ODT, ODS y ODP) desde su XML interno."""
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            root = ET.fromstring(archive.read("content.xml"))
+    except (KeyError, zipfile.BadZipFile, ET.ParseError) as exc:
+        raise DocumentProcessingError(
+            "No pude abrir el documento de LibreOffice. Verifica que sea válido."
+        ) from exc
+
+    blocks: list[TextBlock] = []
+    if extension == ".ods":
+        for sheet in root.findall(".//table:table", ODF_NAMESPACES):
+            sheet_name = sheet.get(
+                f"{{{ODF_NAMESPACES['table']}}}name", "hoja"
+            )
+            for row_number, row in enumerate(
+                sheet.findall(".//table:table-row", ODF_NAMESPACES), start=1
+            ):
+                values = [
+                    _odf_text(cell)
+                    for cell in row.findall("table:table-cell", ODF_NAMESPACES)
+                    if _odf_text(cell)
+                ]
+                if values:
+                    blocks.append(
+                        TextBlock(
+                            " | ".join(values),
+                            f"hoja {sheet_name}, fila {row_number}",
+                        )
+                    )
+    elif extension == ".odp":
+        for slide_number, slide in enumerate(
+            root.findall(".//draw:page", ODF_NAMESPACES), start=1
+        ):
+            for element in slide.iter():
+                if element.tag in {
+                    f"{{{ODF_NAMESPACES['text']}}}p",
+                    f"{{{ODF_NAMESPACES['text']}}}h",
+                }:
+                    text = _odf_text(element)
+                    if text:
+                        blocks.append(TextBlock(text, f"diapositiva {slide_number}"))
+    else:
+        text_tag = f"{{{ODF_NAMESPACES['text']}}}p"
+        heading_tag = f"{{{ODF_NAMESPACES['text']}}}h"
+        for element in root.iter():
+            if element.tag in {text_tag, heading_tag}:
+                text = _odf_text(element)
+                if text:
+                    blocks.append(TextBlock(text, f"párrafo {len(blocks) + 1}"))
+    return blocks
+
+
+def _extract_image(content: bytes, warnings: list[str]) -> list[TextBlock]:
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise OCRUnavailableError(
+            "Para leer imágenes instala Pillow, pytesseract y Tesseract OCR."
+        ) from exc
+    try:
+        image = Image.open(BytesIO(content))
+        image.load()
+    except Exception as exc:
+        raise DocumentProcessingError(
+            "No pude abrir la imagen. Verifica que sea válida."
+        ) from exc
+
+    text = _recognize_image(image).strip()
+    if not text:
+        warnings.append("No se encontró texto legible en la imagen.")
+        return []
+    return [TextBlock(text, "imagen (OCR)")]
+
+
+def _decode_text(content: bytes, warnings: list[str]) -> str:
+    """Lee UTF-8 y avisa si tiene que usar otra codificación."""
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        warnings.append("El archivo no estaba en UTF-8; se leyó con otra codificación.")
+        return content.decode("cp1252", errors="replace")
+
+
+def _extract_text_file(content: bytes, warnings: list[str], extension: str) -> list[TextBlock]:
+    """Lee texto, datos o HTML conservando el número de línea de origen."""
+    text = _decode_text(content, warnings)
+    if extension == ".rtf":
+        text = _clean_rtf(text)
+
+    blocks: list[TextBlock] = []
+    in_html_block = False
     in_comment = False
     for line_number, line in enumerate(text.splitlines(), start=1):
         value = line.strip()
-        if in_comment:
-            if "-->" in value:
-                in_comment = False
-            continue
-        if value.startswith("<!--"):
-            in_comment = "-->" not in value
-            continue
-        if not value or value.startswith("```"):
-            continue
-        clean = _clean_markdown_line(value)
-        if clean:
-            blocks.append(TextBlock(text=clean, source=f"línea {line_number}"))
+        if extension in {".html", ".htm"}:
+            if in_html_block:
+                if re.search(r"</(?:script|style)\s*>", value, re.I):
+                    in_html_block = False
+                continue
+            if re.search(r"<(?:script|style)\b", value, re.I):
+                if not re.search(r"</(?:script|style)\s*>", value, re.I):
+                    in_html_block = True
+                continue
+            value = html.unescape(re.sub(r"<[^>]*>", " ", value))
+            value = re.sub(r"\s+", " ", value).strip()
+        else:
+            if in_comment:
+                if "-->" in value:
+                    in_comment = False
+                continue
+            if value.startswith("<!--"):
+                in_comment = "-->" not in value
+                continue
+            if extension == ".md":
+                if not value or value.startswith("```"):
+                    continue
+                value = _clean_markdown_line(value)
+        if value:
+            blocks.append(TextBlock(text=value, source=f"línea {line_number}"))
     return blocks
+
+
+def _extract_delimited(content: bytes, warnings: list[str], extension: str) -> list[TextBlock]:
+    """Lee CSV y TSV como filas, igual que una hoja de cálculo."""
+    text = _decode_text(content, warnings)
+    delimiter = "," if extension == ".csv" else "\t"
+    blocks: list[TextBlock] = []
+    for row_number, row in enumerate(csv.reader(StringIO(text), delimiter=delimiter), start=1):
+        values = [value.strip() for value in row if value.strip()]
+        if values:
+            blocks.append(TextBlock(" | ".join(values), f"fila {row_number}"))
+    return blocks
+
+
+def _clean_rtf(text: str) -> str:
+    """Quita las órdenes de formato de un RTF sin borrar su texto."""
+    text = re.sub(r"\\[a-zA-Z]+\d* ?", "", text)
+    text = re.sub(r"\\[^a-zA-Z]", "", text)
+    return re.sub(r"[{}]+", "\n", text)
 
 
 def _clean_markdown_line(text: str) -> str:

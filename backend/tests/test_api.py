@@ -51,10 +51,24 @@ def test_inspect_endpoint_accepts_markdown(auth_client) -> None:
     assert result["chunks"][0]["sources"] == ["línea 1", "línea 2"]
 
 
+def test_inspect_endpoint_accepts_common_text_formats(auth_client) -> None:
+    for filename, content, media_type in [
+        ("notas.txt", b"El filtro cada seis meses.", "text/plain"),
+        ("datos.csv", b"Maquina,Frecuencia\nPrensa A,seis meses\n", "text/csv"),
+    ]:
+        response = auth_client.post(
+            "/api/documents/inspect",
+            files={"file": (filename, BytesIO(content), media_type)},
+        )
+
+        assert response.status_code == 200, filename
+        assert response.json()["chunks"], filename
+
+
 def test_inspect_endpoint_rejects_unsupported_format(auth_client) -> None:
     response = auth_client.post(
         "/api/documents/inspect",
-        files={"file": ("datos.csv", b"a,b\n1,2", "text/csv")},
+        files={"file": ("programa.exe", b"MZ\x90\x00", "application/octet-stream")},
     )
 
     assert response.status_code == 415

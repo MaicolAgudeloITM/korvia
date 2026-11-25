@@ -13,7 +13,7 @@ El usuario pide español sencillo, frases cortas y pocas viñetas. Sin jerga inn
 - URL: https://github.com/MaicolAgudeloITM/korvia
 - Rama: `main`. Repositorio público.
 - Usuario Git local: `kemtch` / `kemtch19@gmail.com`.
-- Último commit conocido: `ee19110` — "Guardar memoria del proyecto para futuras sesiones".
+- Último commit conocido: `ab48316` — "Añadir lectura de archivos Markdown (.md)".
 - No se suben claves: `.env`, `.venv`, bases de datos y `data/*` están ignorados. `data/entrada/.gitkeep` sí se sube.
 
 ## Cómo arrancar
@@ -45,7 +45,7 @@ cd D:\Korvia
 python -m pytest -q
 ```
 
-Último resultado: **82 pruebas pasan**.
+Último resultado: **92 pruebas pasan**.
 
 Comandos útiles:
 
@@ -74,8 +74,11 @@ Lo que ya funciona:
 
 - **Usuarios y permisos:** registro, inicio de sesión, sesiones revocables, roles `owner`, `admin` y `member`. Contraseñas con PBKDF2; tokens guardados como hash.
 - **Empresas y espacios:** cada usuario pertenece a una empresa; dueño/admin gestionan, miembro solo lee.
-- **Documentos:** subida de PDF, DOCX, XLSX y MD; OCR en Docker; extracción en fragmentos con origen (página, fila, línea, etc.).
-- **Markdown (.md):** se lee como texto, se limpia el formato básico (títulos, listas, negritas, enlaces) y cada fragmento cita `línea N`. Acepta UTF-8 con BOM; si no es UTF-8 avisa y usa otra codificación.
+- **Documentos:** subida de PDF, Word, Excel, PowerPoint, LibreOffice, texto, datos e imágenes; OCR en Docker; extracción en fragmentos con origen (página, fila, línea, diapositiva, imagen).
+- **Formatos admitidos:** `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.md`, `.txt`, `.log`, `.csv`, `.tsv`, `.json`, `.xml`, `.yaml`, `.yml`, `.html`, `.htm`, `.rtf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.tif`, `.tiff`, `.bmp`. La lista única está en `SUPPORTED_EXTENSIONS` (`document_processing.py`).
+- **Lectura de texto:** Markdown limpia títulos, listas, negritas y enlaces; HTML quita etiquetas y scripts; RTF quita órdenes de formato; CSV/TSV se leen como filas. Todo cita `línea N` o `fila N`. Acepta UTF-8 con BOM; si no es UTF-8 avisa y usa otra codificación.
+- **Presentaciones:** PPTX usa `python-pptx` (dependencia nueva). ODT, ODS y ODP se leen del XML interno con la librería estándar de Python.
+- **Imágenes:** se leen con Tesseract compartiendo la función `_recognize_image` con el OCR de PDF. Sin Tesseract se devuelve un error claro, nunca texto inventado.
 - **Versiones:** subir de nuevo el mismo nombre crea una versión nueva. Solo se usa la versión vigente en búsquedas y respuestas.
 - **Metadata y borrado:** metadata libre; borrado lógico con restauración.
 - **Búsqueda:** por similitud, con filtros de espacio y metadata; reindexado para dueño.
@@ -84,7 +87,7 @@ Lo que ya funciona:
 - **Agentes:** lista de preguntas que se ejecutan en orden y entregan un informe con fuentes. Historial con quién ejecutó y resultado.
 - **Auditoría:** `GET .../audit` para dueño/admin con acciones importantes.
 - **Seguridad básica:** límite de 5 intentos fallidos de login en 15 minutos y cabeceras de seguridad. El límite es solo en memoria.
-- **Interfaz web:** página en `/` con create account, login, áreas, documentos, búsqueda, preguntas, agentes y actividad. Acepta los cuatro formatos. HTML/JS/CSS puro, sin Internet ni build. El token se guarda en `localStorage`.
+- **Interfaz web:** página en `/` con create account, login, áreas, documentos, búsqueda, preguntas, agentes y actividad. El selector de archivos acepta todos los formatos. HTML/JS/CSS puro, sin Internet ni build. El token se guarda en `localStorage`.
 
 ## Proveedores
 
