@@ -13,7 +13,7 @@ El usuario pide español sencillo, frases cortas y pocas viñetas. Sin jerga inn
 - URL: https://github.com/MaicolAgudeloITM/korvia
 - Rama: `main`. Repositorio público.
 - Usuario Git local: `kemtch` / `kemtch19@gmail.com`.
-- Último commit conocido: `d890de6` — "Corregir fallos encontrados al probar la web como usuario".
+- Último commit verificado al cerrar esta sesión: `2fafe75` — "Actualizar memoria con las correcciones de la web". Si hay uno posterior, manda `git log -1`.
 - No se suben claves: `.env`, `.venv`, bases de datos y `data/*` están ignorados. `data/entrada/.gitkeep` sí se sube.
 
 ## Cómo arrancar
@@ -168,6 +168,23 @@ Se corrigieron ambas migraciones y los modelos. Se añadió la prueba `test_las_
 - Recuperación de contraseña, verificación de correo, HTTPS y permisos por documento.
 - Mejorar la interfaz y usar semántica real configurando un proveedor de embeddings.
 - Validar con empresas reales antes de construir más funcionalidades.
+
+## Continuar mañana o desde otro PC
+
+La memoria viaja dentro del repositorio: `docs/Estado.md` y `AGENTS.md` están en Git. No hay que copiar archivos a mano.
+
+En el otro PC:
+
+```bash
+git clone https://github.com/MaicolAgudeloITM/korvia.git
+cd korvia
+```
+
+Si el proyecto ya existe, basta con `git pull`. Luego abre `docs/Estado.md` antes de hacer nada.
+
+Antes de cerrar una sesión: `git status` debe salir limpio y `git push` debe estar al día. Para arrancar la app: `docker compose up --build` y abrir `http://127.0.0.1:8000`.
+
+Las claves y el entorno local no se suben. Si usas un proveedor externo, recrea tu `.env` en el otro PC.
 
 ## Regla para futuras sesiones
 
