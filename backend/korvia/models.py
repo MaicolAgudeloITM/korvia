@@ -174,6 +174,7 @@ class DocumentVersion(Base):
 
     __tablename__ = "document_versions"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_version_tenant_id"),
         UniqueConstraint("document_id", "version_number", name="uq_version_document_number"),
         UniqueConstraint("document_id", "content_sha256", name="uq_version_document_hash"),
         ForeignKeyConstraint(
@@ -279,6 +280,7 @@ class Agent(Base):
 
     __tablename__ = "agents"
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_agent_tenant_id"),
         UniqueConstraint("tenant_id", "name", name="uq_agent_tenant_name"),
         ForeignKeyConstraint(
             ["tenant_id", "space_id"],

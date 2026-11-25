@@ -38,6 +38,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("tenant_id", "id", name="uq_agent_tenant_id"),
         sa.UniqueConstraint("tenant_id", "name", name="uq_agent_tenant_name"),
     )
     op.create_index("ix_agents_space_id", "agents", ["space_id"], unique=False)

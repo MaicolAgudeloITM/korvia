@@ -51,6 +51,7 @@ def upgrade() -> None:
             name="fk_version_document_tenant",
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("tenant_id", "id", name="uq_version_tenant_id"),
         sa.UniqueConstraint("document_id", "version_number", name="uq_version_document_number"),
         sa.UniqueConstraint("document_id", "content_sha256", name="uq_version_document_hash"),
     )
