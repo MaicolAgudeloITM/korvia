@@ -12,17 +12,16 @@ Necesitas Docker Desktop.
 docker compose up --build
 ```
 
-Luego abre **http://127.0.0.1:8000/docs**. Ahí puedes probar la API sin escribir código.
+Luego abre **http://127.0.0.1:8000**. Ahí está la página web. Si prefieres probar la API directamente, abre **http://127.0.0.1:8000/docs**.
 
 ## Primeros pasos
 
-1. En `/docs`, usa `POST /api/auth/register` con `email`, `password` y `company_name`. Te devuelve un `token`.
-2. Pulsa **Authorize** arriba y pega `Bearer <token>`.
-3. Crea un espacio con `POST /api/tenants/{tenant_id}/spaces` y `{"name":"General"}`.
-4. Sube un archivo con `POST /api/tenants/{tenant_id}/spaces/{space_id}/documents`.
-5. Pregunta con `POST /api/tenants/{tenant_id}/ask` y `{"question":"¿cada cuánto se cambia el filtro?"}`.
+1. En la página web, pulsa **¿No tienes cuenta? Crear una** y escribe correo, contraseña y empresa.
+2. Crea un área, por ejemplo "General", y sube un PDF, Word o Excel.
+3. Ve a **Buscar** para encontrar fragmentos o a **Preguntas** para obtener una respuesta con fuentes.
+4. En **Agentes** puedes crear una lista de preguntas y generar un informe.
 
-Para ver tus empresas y tu rol, usa `GET /api/auth/me`.
+La página guarda la sesión en tu navegador. Para salir, pulsa **Salir** arriba a la derecha.
 
 ## Qué puedes hacer
 

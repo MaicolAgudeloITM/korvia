@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KORVIA — tus documentos respondidos</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>KORVIA</h1>
+      <p>Tus documentos, respondidos con fuentes.</p>
+    </div>
+    <div id="session" class="session"></div>
+  </header>
+
+  <main>
+    <section id="login-panel" class="card">
+      <h2>Entrar</h2>
+      <form id="login-form" class="form">
+        <label>Correo <input id="login-email" type="email" required autocomplete="username"></label>
+        <label>Contraseña <input id="login-password" type="password" required autocomplete="current-password"></label>
+        <button type="submit">Entrar</button>
+      </form>
+      <details>
+        <summary>¿No tienes cuenta? Crear una</summary>
+        <form id="register-form" class="form">
+          <label>Correo <input id="register-email" type="email" required></label>
+          <label>Contraseña <input id="register-password" type="password" minlength="8" required></label>
+          <label>Empresa <input id="register-company" type="text" required></label>
+          <button type="submit">Crear cuenta</button>
+        </form>
+      </details>
+    </section>
+
+    <section id="app-panel" hidden>
+      <div class="context">
+        <label>Empresa
+          <select id="tenant-select"></select>
+        </label>
+        <span id="role-label" class="badge"></span>
+      </div>
+
+      <nav class="tabs" id="tabs">
+        <button type="button" data-tab="documentos" class="active">Documentos</button>
+        <button type="button" data-tab="buscar">Buscar</button>
+        <button type="button" data-tab="preguntas">Preguntas</button>
+        <button type="button" data-tab="agentes">Agentes</button>
+        <button type="button" data-tab="actividad">Actividad</button>
+      </nav>
+
+      <section id="tab-documentos" class="card tab">
+        <h2>Documentos</h2>
+        <div class="row">
+          <label>Área
+            <select id="space-select"></select>
+          </label>
+          <form id="space-form" class="form inline">
+            <input id="space-name" type="text" placeholder="Nueva área" required>
+            <button type="submit">Crear área</button>
+          </form>
+        </div>
+        <form id="upload-form" class="form">
+          <label>Subir archivo (PDF, Word o Excel)
+            <input id="upload-file" type="file" accept=".pdf,.docx,.xlsx" required>
+          </label>
+          <button type="submit">Subir documento</button>
+        </form>
+        <div id="document-list" class="list"></div>
+        <div id="document-detail" class="detail"></div>
+      </section>
+
+      <section id="tab-buscar" class="card tab" hidden>
+        <h2>Buscar</h2>
+        <form id="search-form" class="form">
+          <label>¿Qué estás buscando?
+            <input id="search-query" type="text" placeholder="por ejemplo: filtro de mantenimiento" required>
+          </label>
+          <button type="submit">Buscar</button>
+        </form>
+        <div id="search-results" class="list"></div>
+      </section>
+
+      <section id="tab-preguntas" class="card tab" hidden>
+        <h2>Preguntar</h2>
+        <form id="ask-form" class="form">
+          <label>Tu pregunta
+            <input id="ask-question" type="text" placeholder="¿cada cuánto se cambia el filtro?" required>
+          </label>
+          <button type="submit">Preguntar</button>
+        </form>
+        <div id="ask-answer" class="result"></div>
+      </section>
+
+      <section id="tab-agentes" class="card tab" hidden>
+        <h2>Agentes</h2>
+        <p>Un agente ejecuta varias preguntas y entrega un informe con fuentes.</p>
+        <form id="agent-form" class="form">
+          <label>Nombre <input id="agent-name" type="text" placeholder="Revisión mensual" required></label>
+          <label>Preguntas (una por línea)
+            <textarea id="agent-steps" rows="4" placeholder="¿qué mantenimientos hay?&#10;¿cuáles están atrasados?" required></textarea>
+          </label>
+          <button type="submit">Crear agente</button>
+        </form>
+        <div id="agent-list" class="list"></div>
+        <div id="agent-result" class="result"></div>
+      </section>
+
+      <section id="tab-actividad" class="card tab" hidden>
+        <h2>Actividad reciente</h2>
+        <div id="audit-list" class="list"></div>
+      </section>
+    </section>
+
+    <div id="mensaje" class="mensaje" role="status" aria-live="polite"></div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

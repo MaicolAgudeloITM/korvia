@@ -22,6 +22,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
@@ -79,6 +80,7 @@ from korvia.models import (
 MAX_UPLOAD_BYTES = int(os.getenv("KORVIA_MAX_UPLOAD_BYTES", "25000000"))
 MIN_ANSWER_SCORE = float(os.getenv("KORVIA_MIN_ANSWER_SCORE", "0.05"))
 SYNC_ROOT = os.getenv("KORVIA_SYNC_ROOT", "").strip()
+WEB_DIR = Path(__file__).resolve().parent / "web"
 VALID_ROLES = {ROLE_ADMIN, ROLE_MEMBER}
 VALID_METADATA_VALUES = (str, int, float, bool, type(None))
 
@@ -109,7 +111,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="KORVIA — prototipo local",
     description="Extrae y versiona documentos empresariales con acceso controlado.",
-    version="0.8.0",
+    version="0.9.0",
     lifespan=lifespan,
 )
 
@@ -563,6 +565,21 @@ def _process_upload(filename: str, content: bytes):
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "mode": "local-prototype"}
+
+
+@app.get("/", include_in_schema=False)
+def web_index() -> FileResponse:
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/app.js", include_in_schema=False)
+def web_script() -> FileResponse:
+    return FileResponse(WEB_DIR / "app.js", media_type="application/javascript")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def web_styles() -> FileResponse:
+    return FileResponse(WEB_DIR / "styles.css", media_type="text/css")
 
 
 @app.post("/api/auth/register", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
