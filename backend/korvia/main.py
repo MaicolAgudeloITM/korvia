@@ -46,6 +46,8 @@ from korvia.models import (
     ROLE_ADMIN,
     ROLE_MEMBER,
     ROLE_OWNER,
+    Agent,
+    AgentRun,
     Document,
     DocumentChunk,
     DocumentVersion,
@@ -92,7 +94,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="KORVIA — prototipo local",
     description="Extrae y versiona documentos empresariales con acceso controlado.",
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -318,6 +320,53 @@ class SyncStatusResponse(BaseModel):
     files: list[SyncedFileResponse]
 
 
+class AgentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    steps: list[str] = Field(min_length=1, max_length=10)
+    space_id: str | None = None
+    metadata_filters: dict[str, str | int | float | bool] = Field(default_factory=dict)
+
+
+class AgentResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    description: str | None
+    steps: list[str]
+    space_id: str | None
+    metadata_filters: dict[str, str | int | float | bool]
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentStepResult(BaseModel):
+    question: str
+    answer: str
+    sources: list[AnswerSourceResponse]
+    insufficient_evidence: bool
+
+
+class AgentRunResponse(BaseModel):
+    run_id: str
+    agent_id: str
+    report: str
+    steps: list[AgentStepResult]
+    status: str
+    started_at: datetime
+    finished_at: datetime
+
+
+class AgentRunSummary(BaseModel):
+    run_id: str
+    triggered_by: str | None
+    started_at: datetime
+    finished_at: datetime
+    status: str
+    steps_count: int
+    error: str | None
+
+
 def _user_response(user: User) -> UserResponse:
     return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
 
@@ -356,6 +405,29 @@ def _require_optional_space(db: Session, tenant_id: str, space_id: str | None) -
     )
     if space is None:
         raise HTTPException(status_code=404, detail="No se encontró el espacio de conocimiento.")
+
+
+def _validate_steps(steps: list[str]) -> list[str]:
+    cleaned = [step.strip() for step in steps]
+    if any(not step or len(step) > 1000 for step in cleaned):
+        raise HTTPException(
+            status_code=422, detail="Cada paso debe ser una pregunta de 1 a 1000 caracteres."
+        )
+    return cleaned
+
+
+def _agent_response(agent: Agent) -> AgentResponse:
+    return AgentResponse(
+        id=agent.id,
+        tenant_id=agent.tenant_id,
+        name=agent.name,
+        description=agent.description,
+        steps=list(agent.steps_json),
+        space_id=agent.space_id,
+        metadata_filters=agent.metadata_filters_json or {},
+        created_at=agent.created_at,
+        updated_at=agent.updated_at,
+    )
 
 
 def _get_document(
@@ -1012,19 +1084,18 @@ def search_documents(
     )
 
 
-@app.post("/api/tenants/{tenant_id}/ask", response_model=AskResponse)
-def answer_question(
+def _answer_question(
+    db: Session,
     tenant_id: str,
-    payload: AskRequest,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_session),
+    question: str,
+    *,
+    top_k: int = 5,
+    space_id: str | None = None,
+    metadata_filters: dict[str, str | int | float | bool] | None = None,
 ) -> AskResponse:
-    """Responde usando solo los fragmentos recuperados y devuelve sus fuentes."""
-    require_read_access(db, user, tenant_id)
-    _require_optional_space(db, tenant_id, payload.space_id)
-
+    """Busca evidencia y responde. El permiso ya lo comprobó quien llama."""
     try:
-        query_vector = get_provider().embed([payload.question])[0]
+        query_vector = get_provider().embed([question])[0]
     except EmbeddingError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -1034,9 +1105,9 @@ def answer_question(
             db,
             tenant_id,
             query_vector,
-            payload.top_k,
-            space_id=payload.space_id,
-            metadata_filters=payload.metadata_filters,
+            top_k,
+            space_id=space_id,
+            metadata_filters=metadata_filters or {},
         )
         if match[3] >= MIN_ANSWER_SCORE
     ]
@@ -1080,7 +1151,7 @@ def answer_question(
     else:
         try:
             chat_provider = get_chat_provider()
-            answer = chat_provider.answer(payload.question, context, chat_sources)
+            answer = chat_provider.answer(question, context, chat_sources)
         except ChatError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         provider_name = chat_provider.name
@@ -1091,6 +1162,192 @@ def answer_question(
         provider=provider_name,
         insufficient_evidence=not sources or answer.strip() == NO_EVIDENCE_ANSWER,
     )
+
+
+@app.post("/api/tenants/{tenant_id}/ask", response_model=AskResponse)
+def answer_question(
+    tenant_id: str,
+    payload: AskRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> AskResponse:
+    """Responde usando solo los fragmentos recuperados y devuelve sus fuentes."""
+    require_read_access(db, user, tenant_id)
+    _require_optional_space(db, tenant_id, payload.space_id)
+    return _answer_question(
+        db,
+        tenant_id,
+        payload.question,
+        top_k=payload.top_k,
+        space_id=payload.space_id,
+        metadata_filters=payload.metadata_filters,
+    )
+
+
+@app.post(
+    "/api/tenants/{tenant_id}/agents", response_model=AgentResponse, status_code=status.HTTP_201_CREATED
+)
+def create_agent(
+    tenant_id: str,
+    payload: AgentCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> AgentResponse:
+    """Define una tarea con varias preguntas que se ejecutarán en orden."""
+    require_write_access(db, user, tenant_id)
+    _require_optional_space(db, tenant_id, payload.space_id)
+    steps = _validate_steps(payload.steps)
+    agent = Agent(
+        tenant_id=tenant_id,
+        name=payload.name.strip(),
+        description=payload.description,
+        steps_json=steps,
+        space_id=payload.space_id,
+        metadata_filters_json=payload.metadata_filters,
+    )
+    db.add(agent)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Ya existe un agente con ese nombre.") from exc
+    db.refresh(agent)
+    return _agent_response(agent)
+
+
+@app.get("/api/tenants/{tenant_id}/agents", response_model=list[AgentResponse])
+def list_agents(
+    tenant_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> list[AgentResponse]:
+    require_read_access(db, user, tenant_id)
+    agents = db.scalars(
+        select(Agent).where(Agent.tenant_id == tenant_id).order_by(Agent.created_at)
+    ).all()
+    return [_agent_response(agent) for agent in agents]
+
+
+def _get_agent(db: Session, tenant_id: str, agent_id: str) -> Agent:
+    agent = db.scalar(
+        select(Agent).where(Agent.id == agent_id, Agent.tenant_id == tenant_id)
+    )
+    if agent is None:
+        raise HTTPException(status_code=404, detail="No se encontró el agente.")
+    return agent
+
+
+@app.post(
+    "/api/tenants/{tenant_id}/agents/{agent_id}/run", response_model=AgentRunResponse
+)
+def run_agent(
+    tenant_id: str,
+    agent_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> AgentRunResponse:
+    """Ejecuta los pasos del agente y guarda el informe con sus fuentes."""
+    require_read_access(db, user, tenant_id)
+    agent = _get_agent(db, tenant_id, agent_id)
+    _require_optional_space(db, tenant_id, agent.space_id)
+
+    started_at = utc_now()
+    results: list[AgentStepResult] = []
+    report_lines = [f"# {agent.name}", ""]
+    failure: HTTPException | None = None
+
+    for index, question in enumerate(agent.steps_json, start=1):
+        try:
+            answer = _answer_question(
+                db,
+                tenant_id,
+                question,
+                space_id=agent.space_id,
+                metadata_filters=agent.metadata_filters_json or {},
+            )
+        except HTTPException as exc:
+            failure = exc
+            break
+        results.append(
+            AgentStepResult(
+                question=question,
+                answer=answer.answer,
+                sources=answer.sources,
+                insufficient_evidence=answer.insufficient_evidence,
+            )
+        )
+        sources_text = ", ".join(
+            f"{source.filename} v{source.version} [{source.number}]" for source in answer.sources
+        ) or "ninguna"
+        report_lines.append(f"## {index}. {question}\n\n{answer.answer}\n\nFuentes: {sources_text}")
+
+    if failure is not None:
+        status_value = "error"
+        error = str(failure.detail)
+        report = f"El agente no pudo completarse: {error}"
+    else:
+        status_value = "ok"
+        error = None
+        report = "\n\n".join(report_lines)
+
+    run = AgentRun(
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        triggered_by=user.id,
+        started_at=started_at,
+        finished_at=utc_now(),
+        status=status_value,
+        report_text=report,
+        steps_json=[step.model_dump(mode="json") for step in results],
+        error=error,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    if failure is not None:
+        raise failure
+    return AgentRunResponse(
+        run_id=run.id,
+        agent_id=agent_id,
+        report=run.report_text,
+        steps=results,
+        status=run.status,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+    )
+
+
+@app.get(
+    "/api/tenants/{tenant_id}/agents/{agent_id}/runs", response_model=list[AgentRunSummary]
+)
+def list_agent_runs(
+    tenant_id: str,
+    agent_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> list[AgentRunSummary]:
+    """Muestra el historial de ejecuciones: cuándo, quién y con qué resultado."""
+    require_read_access(db, user, tenant_id)
+    _get_agent(db, tenant_id, agent_id)
+    runs = db.scalars(
+        select(AgentRun)
+        .where(AgentRun.tenant_id == tenant_id, AgentRun.agent_id == agent_id)
+        .order_by(AgentRun.started_at.desc())
+        .limit(20)
+    ).all()
+    return [
+        AgentRunSummary(
+            run_id=run.id,
+            triggered_by=run.triggered_by,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            status=run.status,
+            steps_count=len(run.steps_json),
+            error=run.error,
+        )
+        for run in runs
+    ]
 
 
 @app.post(

@@ -272,3 +272,59 @@ class SyncRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     summary_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+
+class Agent(Base):
+    """Tarea con varios pasos que consulta el conocimiento de la empresa."""
+
+    __tablename__ = "agents"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_agent_tenant_name"),
+        ForeignKeyConstraint(
+            ["tenant_id", "space_id"],
+            ["knowledge_spaces.tenant_id", "knowledge_spaces.id"],
+            ondelete="CASCADE",
+            name="fk_agent_space_tenant",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    space_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    steps_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    metadata_filters_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AgentRun(Base):
+    """Registro de una ejecución de agente, con sus respuestas y fuentes."""
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "agent_id"],
+            ["agents.tenant_id", "agents.id"],
+            ondelete="CASCADE",
+            name="fk_agent_run_tenant",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    tenant_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    agent_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    triggered_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    report_text: Mapped[str] = mapped_column(Text, nullable=False)
+    steps_json: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)

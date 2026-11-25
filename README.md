@@ -30,7 +30,18 @@ Para ver tus empresas y tu rol, usa `GET /api/auth/me`.
 - **Buscar.** `POST /api/tenants/{tenant_id}/search` con `{"query":"texto a buscar"}`.
 - **Preguntar.** La respuesta trae citas `[1]`, `[2]` con el archivo de origen. Si no hay información, dice que no encontró nada.
 - **Sincronizar una carpeta.** Deja tus archivos en `data/entrada` y llama a `POST /api/tenants/{tenant_id}/spaces/{space_id}/sync`. Los cambios se aplican cuando ejecutas esa orden.
-- **Invitar personas.** `POST /api/tenants/{tenant_id}/members`. Dueño y administrador pueden subir archivos; los miembros solo pueden leer.
+- **Usar un agente.** Varias preguntas ejecutadas en orden que entregan un informe con fuentes.
+- **Invitar personas.** `POST /api/tenants/{tenant_id}/members`. Dueño y administrador pueden subir archivos y crear agentes; los miembros pueden preguntar y ejecutarlos.
+
+## Agentes
+
+Un agente es una tarea con varias preguntas. Dueño y administrador lo crean; cualquier miembro puede ejecutarlo.
+
+1. Créalo con `POST /api/tenants/{tenant_id}/agents` y `{"name":"Revisión","steps":["¿cada cuánto se cambia el filtro?","¿quién lo revisa?"]}`.
+2. Ejecútalo con `POST /api/tenants/{tenant_id}/agents/{agent_id}/run`. Devuelve un informe con la respuesta y las citas de cada paso.
+3. Consulta el historial con `GET /api/tenants/{tenant_id}/agents/{agent_id}/runs`: cuándo se ejecutó, quién lo hizo y si falló.
+
+Al crearlo puedes añadir `"space_id"` o `"metadata_filters"` para limitar qué documentos consulta. Si una pregunta no tiene evidencia, el informe lo dice en vez de inventar.
 
 ## Opciones
 
