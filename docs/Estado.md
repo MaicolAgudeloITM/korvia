@@ -13,7 +13,7 @@ El usuario pide español sencillo, frases cortas y pocas viñetas. Sin jerga inn
 - URL: https://github.com/MaicolAgudeloITM/korvia
 - Rama: `main`. Repositorio público.
 - Usuario Git local: `kemtch` / `kemtch19@gmail.com`.
-- Último commit conocido: `ab48316` — "Añadir lectura de archivos Markdown (.md)".
+- Último commit conocido: `50e55f5` — "Ampliar formatos admitidos: Office, OpenDocument, datos e imágenes".
 - No se suben claves: `.env`, `.venv`, bases de datos y `data/*` están ignorados. `data/entrada/.gitkeep` sí se sube.
 
 ## Cómo arrancar
