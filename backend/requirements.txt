@@ -1,0 +1,12 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+python-multipart>=0.0.20,<1.0
+PyMuPDF>=1.25,<2.0
+python-docx>=1.1,<2.0
+openpyxl>=3.1,<4.0
+Pillow>=11,<13
+pytesseract>=0.3.13,<1.0
+SQLAlchemy>=2.0,<3.0
+Alembic>=1.14,<2.0
+psycopg[binary]>=3.2,<4.0
+pgvector>=0.3,<1.0

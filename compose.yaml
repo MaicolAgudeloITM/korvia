@@ -1,0 +1,43 @@
+services:
+  database:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: korvia
+      POSTGRES_USER: korvia
+      POSTGRES_PASSWORD: korvia_dev_only
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U korvia -d korvia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  korvia-api:
+    build:
+      context: ./backend
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      KORVIA_MAX_UPLOAD_BYTES: "25000000"
+      DATABASE_URL: postgresql+psycopg://korvia:korvia_dev_only@database:5432/korvia
+      KORVIA_STORAGE_DIR: /data/uploads
+      KORVIA_EMBEDDING_PROVIDER: "${KORVIA_EMBEDDING_PROVIDER:-local-hash}"
+      KORVIA_OPENAI_API_KEY: "${KORVIA_OPENAI_API_KEY:-}"
+      KORVIA_OPENAI_MODEL: "${KORVIA_OPENAI_MODEL:-text-embedding-3-small}"
+      KORVIA_OPENAI_BASE_URL: "${KORVIA_OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      KORVIA_CHAT_PROVIDER: "${KORVIA_CHAT_PROVIDER:-extractive}"
+      KORVIA_CHAT_API_KEY: "${KORVIA_CHAT_API_KEY:-}"
+      KORVIA_CHAT_MODEL: "${KORVIA_CHAT_MODEL:-gpt-4o-mini}"
+      KORVIA_CHAT_BASE_URL: "${KORVIA_CHAT_BASE_URL:-https://api.openai.com/v1}"
+      KORVIA_MIN_ANSWER_SCORE: "${KORVIA_MIN_ANSWER_SCORE:-0.05}"
+      KORVIA_SYNC_ROOT: "${KORVIA_SYNC_ROOT:-/sync}"
+    volumes:
+      - ./data:/data
+      - ./data/entrada:/sync:ro
+
+volumes:
+  postgres-data:
