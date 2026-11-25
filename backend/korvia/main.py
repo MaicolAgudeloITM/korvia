@@ -10,7 +10,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
@@ -18,10 +29,13 @@ from sqlalchemy.orm import Session
 
 from korvia.chat import ChatError, ChatSource, NO_EVIDENCE_ANSWER, get_chat_provider
 from korvia.auth import (
+    check_login_attempt,
+    clear_login_failures,
     get_current_user,
     hash_password,
     issue_token,
     normalize_email,
+    record_login_failure,
     require_owner_access,
     require_read_access,
     require_write_access,
@@ -48,6 +62,7 @@ from korvia.models import (
     ROLE_OWNER,
     Agent,
     AgentRun,
+    AuditEvent,
     Document,
     DocumentChunk,
     DocumentVersion,
@@ -94,9 +109,19 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="KORVIA — prototipo local",
     description="Extrae y versiona documentos empresariales con acceso controlado.",
-    version="0.7.0",
+    version="0.8.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next) -> Response:
+    """Cabeceras básicas para evitar marcos ajenos y guardar respuestas."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 class ChunkResponse(BaseModel):
@@ -367,8 +392,53 @@ class AgentRunSummary(BaseModel):
     error: str | None
 
 
+class AuditEventResponse(BaseModel):
+    id: str
+    created_at: datetime
+    action: str
+    actor_email: str | None
+    target_type: str | None
+    target_id: str | None
+    summary: str | None
+
+
 def _user_response(user: User) -> UserResponse:
     return UserResponse(id=user.id, email=user.email, created_at=user.created_at)
+
+
+def _primary_tenant_id(db: Session, user_id: str) -> str | None:
+    membership = db.scalar(
+        select(Membership)
+        .where(Membership.user_id == user_id)
+        .order_by(Membership.created_at)
+    )
+    return membership.tenant_id if membership else None
+
+
+def _audit(
+    db: Session,
+    user: User,
+    tenant_id: str | None,
+    action: str,
+    *,
+    target_type: str | None = None,
+    target_id: str | None = None,
+    summary: str | None = None,
+) -> None:
+    """Escribe un evento en el historial de la empresa."""
+    if not tenant_id:
+        return
+    db.add(
+        AuditEvent(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            actor_email=user.email,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            summary=summary,
+        )
+    )
 
 
 def _tenant_response(tenant: Tenant) -> TenantResponse:
@@ -517,6 +587,10 @@ def register(payload: RegisterRequest, db: Session = Depends(get_session)) -> Re
     db.refresh(user)
 
     db.add(Membership(user_id=user.id, tenant_id=tenant.id, role=ROLE_OWNER))
+    _audit(
+        db, user, tenant.id, "registro", target_type="empresa", target_id=tenant.id,
+        summary=f"Creó la empresa {company_name}.",
+    )
     token = issue_token(db, user)
     return RegistrationResponse(
         token=token,
@@ -526,11 +600,20 @@ def register(payload: RegisterRequest, db: Session = Depends(get_session)) -> Re
 
 
 @app.post("/api/auth/login", response_model=SessionResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_session)) -> SessionResponse:
+def login(
+    payload: LoginRequest, request: Request, db: Session = Depends(get_session)
+) -> SessionResponse:
     email = normalize_email(payload.email)
+    client_host = request.client.host if request.client else None
+    check_login_attempt(email, client_host)
     user = db.scalar(select(User).where(User.email == email))
     if user is None or not verify_password(payload.password, user.password_hash):
+        record_login_failure(email, client_host)
         raise HTTPException(status_code=401, detail="Correo o contraseña incorrectos.")
+    clear_login_failures(email, client_host)
+    _audit(
+        db, user, _primary_tenant_id(db, user.id), "inicio_sesion", summary="Inició sesión."
+    )
     token = issue_token(db, user)
     return SessionResponse(token=token, user=_user_response(user))
 
@@ -558,11 +641,16 @@ def read_me(
 @app.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     authorization: str | None = Header(default=None),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> None:
+    _audit(
+        db, current_user, _primary_tenant_id(db, current_user.id), "cierre_sesion",
+        summary="Cerró sesión.",
+    )
     if authorization:
         revoke_token(db, authorization[7:].strip())
+    db.commit()
 
 
 @app.post("/api/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
@@ -579,6 +667,10 @@ def create_tenant(
     db.commit()
     db.refresh(tenant)
     db.add(Membership(user_id=user.id, tenant_id=tenant.id, role=ROLE_OWNER))
+    _audit(
+        db, user, tenant.id, "crear_empresa", target_type="empresa", target_id=tenant.id,
+        summary=f"Creó la empresa {name}.",
+    )
     db.commit()
     return _tenant_response(tenant)
 
@@ -640,6 +732,10 @@ def add_member(
 
     membership = Membership(user_id=invited_user.id, tenant_id=tenant_id, role=payload.role)
     db.add(membership)
+    _audit(
+        db, user, tenant_id, "invitar_miembro", target_type="usuario",
+        target_id=invited_user.id, summary=f"Invitó a {invited_user.email} como {payload.role}.",
+    )
     try:
         db.commit()
         db.refresh(membership)
@@ -672,6 +768,9 @@ def create_space(
 
     space = KnowledgeSpace(tenant_id=tenant_id, name=name)
     db.add(space)
+    _audit(
+        db, user, tenant_id, "crear_espacio", target_type="espacio", summary=f"Creó el espacio {name}."
+    )
     try:
         db.commit()
     except IntegrityError as exc:
@@ -829,6 +928,12 @@ def save_document(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DocumentError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    version = document.current_version.version_number if document.current_version else 0
+    _audit(
+        db, user, tenant_id, "subir_documento", target_type="documento", target_id=document.id,
+        summary=f"Guardó {filename} como versión {version}.",
+    )
+    db.commit()
     return _document_response(document)
 
 
@@ -889,6 +994,10 @@ def update_metadata(
             raise HTTPException(status_code=422, detail="La metadata solo admite texto, números o banderas.")
     document.metadata_json = dict(payload.metadata)
     document.updated_at = utc_now()
+    _audit(
+        db, user, tenant_id, "cambiar_metadata", target_type="documento", target_id=document.id,
+        summary=f"Cambió la metadata de {document.filename}.",
+    )
     db.commit()
     db.refresh(document)
     return _document_response(document)
@@ -909,6 +1018,10 @@ def delete_document(
     document = _get_document(db, tenant_id, space_id, document_id)
     document.deleted_at = utc_now()
     document.updated_at = document.deleted_at
+    _audit(
+        db, user, tenant_id, "ocultar_documento", target_type="documento", target_id=document.id,
+        summary=f"Ocultó {document.filename}.",
+    )
     db.commit()
 
 
@@ -929,6 +1042,10 @@ def restore_document(
         raise HTTPException(status_code=409, detail="El documento ya está activo.")
     document.deleted_at = None
     document.updated_at = utc_now()
+    _audit(
+        db, user, tenant_id, "restaurar_documento", target_type="documento", target_id=document.id,
+        summary=f"Restauró {document.filename}.",
+    )
     db.commit()
     db.refresh(document)
     return _document_response(document)
@@ -1039,6 +1156,10 @@ def reindex_embeddings(
     except EmbeddingError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    _audit(
+        db, user, tenant_id, "reindexar", summary=f"Regeneró {embedded} vectores de búsqueda."
+    )
+    db.commit()
     return ReindexResponse(embedded_chunks=embedded, provider=provider.name)
 
 
@@ -1174,6 +1295,10 @@ def answer_question(
     """Responde usando solo los fragmentos recuperados y devuelve sus fuentes."""
     require_read_access(db, user, tenant_id)
     _require_optional_space(db, tenant_id, payload.space_id)
+    _audit(
+        db, user, tenant_id, "pregunta", summary=f"Preguntó: {payload.question[:200]}"
+    )
+    db.commit()
     return _answer_question(
         db,
         tenant_id,
@@ -1206,6 +1331,10 @@ def create_agent(
         metadata_filters_json=payload.metadata_filters,
     )
     db.add(agent)
+    _audit(
+        db, user, tenant_id, "crear_agente", target_type="agente", target_id=agent.id,
+        summary=f"Creó el agente {agent.name} con {len(steps)} pasos.",
+    )
     try:
         db.commit()
     except IntegrityError as exc:
@@ -1302,6 +1431,10 @@ def run_agent(
         error=error,
     )
     db.add(run)
+    _audit(
+        db, user, tenant_id, "ejecutar_agente", target_type="agente", target_id=agent_id,
+        summary=f"Ejecutó {agent.name}: {status_value} con {len(results)} pasos.",
+    )
     db.commit()
     db.refresh(run)
 
@@ -1347,6 +1480,35 @@ def list_agent_runs(
             error=run.error,
         )
         for run in runs
+    ]
+
+
+@app.get("/api/tenants/{tenant_id}/audit", response_model=list[AuditEventResponse])
+def list_audit_events(
+    tenant_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> list[AuditEventResponse]:
+    """Muestra la actividad reciente de la empresa. Solo dueño o administrador."""
+    require_write_access(db, user, tenant_id)
+    events = db.scalars(
+        select(AuditEvent)
+        .where(AuditEvent.tenant_id == tenant_id)
+        .order_by(AuditEvent.created_at.desc())
+        .limit(limit)
+    ).all()
+    return [
+        AuditEventResponse(
+            id=event.id,
+            created_at=event.created_at,
+            action=event.action,
+            actor_email=event.actor_email,
+            target_type=event.target_type,
+            target_id=event.target_id,
+            summary=event.summary,
+        )
+        for event in events
     ]
 
 
@@ -1444,6 +1606,13 @@ def sync_space(
         "eliminados": removed,
         "errores": errors,
     }
+    _audit(
+        db, user, tenant_id, "sincronizar", target_type="espacio", target_id=space_id,
+        summary=(
+            f"Revisó {len(files)} archivos: {created} creados, {updated} actualizados, "
+            f"{removed} eliminados."
+        ),
+    )
     db.add(
         SyncRun(
             tenant_id=tenant_id,

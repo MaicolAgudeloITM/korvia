@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from korvia.auth import reset_login_failures
 from korvia.database import Base, engine
 from korvia.main import app
 
@@ -24,9 +25,11 @@ def _drop_all_tables() -> None:
 
 @pytest.fixture(autouse=True)
 def reset_test_database():
+    reset_login_failures()
     _drop_all_tables()
     yield
     _drop_all_tables()
+    reset_login_failures()
 
 
 @pytest.fixture

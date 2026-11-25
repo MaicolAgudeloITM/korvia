@@ -31,6 +31,7 @@ Para ver tus empresas y tu rol, usa `GET /api/auth/me`.
 - **Preguntar.** La respuesta trae citas `[1]`, `[2]` con el archivo de origen. Si no hay información, dice que no encontró nada.
 - **Sincronizar una carpeta.** Deja tus archivos en `data/entrada` y llama a `POST /api/tenants/{tenant_id}/spaces/{space_id}/sync`. Los cambios se aplican cuando ejecutas esa orden.
 - **Usar un agente.** Varias preguntas ejecutadas en orden que entregan un informe con fuentes.
+- **Ver la actividad.** `GET /api/tenants/{tenant_id}/audit` muestra quién hizo cada acción. Solo dueño o administrador.
 - **Invitar personas.** `POST /api/tenants/{tenant_id}/members`. Dueño y administrador pueden subir archivos y crear agentes; los miembros pueden preguntar y ejecutarlos.
 
 ## Agentes
@@ -51,6 +52,8 @@ Crea un archivo `.env` junto a `compose.yaml` si quieres cambiar algo. Ese archi
 - `KORVIA_CHAT_PROVIDER=openai` y `KORVIA_CHAT_API_KEY`: para que las respuestas sean redactadas por un modelo de IA.
 - `KORVIA_CHAT_BASE_URL` y `KORVIA_OPENAI_BASE_URL`: para usar otro proveedor compatible en vez de OpenAI.
 - `KORVIA_MAX_UPLOAD_BYTES`: tamaño máximo por archivo (25 MB por defecto).
+- `KORVIA_LOGIN_MAX_FAILURES`: intentos fallidos de acceso permitidos (5 por defecto).
+- `KORVIA_LOGIN_WINDOW_SECONDS`: tiempo en segundos para contar esos intentos (900 = 15 minutos).
 
 Sin esas opciones KORVIA funciona igual, pero la búsqueda es básica y las respuestas solo muestran los fragmentos encontrados.
 
@@ -64,6 +67,7 @@ python -m pytest
 ## Límites
 
 - La API escucha solo en tu computador (`127.0.0.1`).
-- No hay recuperación de contraseña ni protección contra intentos repetidos.
+- No hay recuperación de contraseña. Sí hay un límite de intentos fallidos, pero se guarda solo en memoria: se reinicia al arrancar y no se comparte entre servidores.
+- Las respuestas llevan cabeceras básicas de seguridad; aun así, la API sigue siendo local de prueba.
 - Si ejecutas Python sin Docker, el OCR necesita Tesseract instalado.
 - Los archivos se guardan en `data/uploads` y los datos en PostgreSQL.

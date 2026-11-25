@@ -12,6 +12,8 @@ import hmac
 import os
 import re
 import secrets
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException, status
@@ -24,7 +26,42 @@ from korvia.models import Membership, Session as UserSession, User, WRITE_ROLES
 
 PBKDF2_ITERATIONS = 600_000
 SESSION_HOURS = int(os.getenv("KORVIA_SESSION_HOURS", "168"))
+LOGIN_MAX_FAILURES = int(os.getenv("KORVIA_LOGIN_MAX_FAILURES", "5"))
+LOGIN_WINDOW_SECONDS = int(os.getenv("KORVIA_LOGIN_WINDOW_SECONDS", "900"))
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# Solo en memoria: se reinicia al arrancar y no se comparte entre procesos.
+_login_failures: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+
+
+def _login_key(email: str, client_host: str | None) -> tuple[str, str]:
+    return email, client_host or "desconocido"
+
+
+def check_login_attempt(email: str, client_host: str | None) -> None:
+    """Bloquea temporalmente tras demasiados intentos fallidos."""
+    now = time.monotonic()
+    attempts = _login_failures[_login_key(email, client_host)]
+    while attempts and now - attempts[0] > LOGIN_WINDOW_SECONDS:
+        attempts.popleft()
+    if len(attempts) >= LOGIN_MAX_FAILURES:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos fallidos. Espera unos minutos.",
+        )
+
+
+def record_login_failure(email: str, client_host: str | None) -> None:
+    _login_failures[_login_key(email, client_host)].append(time.monotonic())
+
+
+def clear_login_failures(email: str, client_host: str | None) -> None:
+    _login_failures.pop(_login_key(email, client_host), None)
+
+
+def reset_login_failures() -> None:
+    """Para pruebas: borra el contador de intentos."""
+    _login_failures.clear()
 
 _UNAUTHORIZED = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
